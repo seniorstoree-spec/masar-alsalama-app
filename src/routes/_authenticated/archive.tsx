@@ -110,24 +110,17 @@ function ArchivePage() {
 
   const archive = useMemo(() => {
     const map: Record<string, { key: string; year: number; month: number; rows: any[] }> = {};
-    const targetYears = yearSel !== "all" ? [Number(yearSel)] : [currentYear];
+    const activeYear = yearSel !== "all" ? Number(yearSel) : currentYear;
 
-    // Always ensure September folder exists for current/selected years
-    targetYears.forEach((y) => {
-      if (monthSel === "all" || monthSel === "9") {
-        const sepKey = `${y}-09`;
-        if (!map[sepKey]) map[sepKey] = { key: sepKey, year: y, month: 9, rows: [] };
+    // Pre-populate all 12 months for active year to allow September and any month display
+    for (let m = 1; m <= 12; m++) {
+      if (monthSel === "all" || monthSel === String(m)) {
+        const key = `${activeYear}-${String(m).padStart(2, "0")}`;
+        map[key] = { key, year: activeYear, month: m, rows: [] };
       }
-    });
+    }
 
-    // Include custom created folders
-    customFolders.forEach((key) => {
-      const [y, m] = key.split("-").map(Number);
-      if ((yearSel === "all" || String(y) === yearSel) && (monthSel === "all" || m === Number(monthSel))) {
-        if (!map[key]) map[key] = { key, year: y, month: m, rows: [] };
-      }
-    });
-
+    // Populate rows from violations
     searched.forEach((v: any) => {
       const d = String(v.violation_date || "");
       if (d.length < 7) return;
@@ -140,7 +133,9 @@ function ArchivePage() {
       map[key].rows.push(v);
     });
 
+    // Always include months with rows + September (month 9) + custom user added months
     return Object.values(map)
+      .filter((f) => f.rows.length > 0 || f.month === 9 || customFolders.includes(f.key))
       .sort((a, b) => (a.key < b.key ? 1 : -1))
       .map((f): ArchiveFolder => {
         const emps: Record<string, number> = {};
@@ -155,7 +150,7 @@ function ArchivePage() {
         const topTypeE = Object.entries(types).sort((a, b) => b[1] - a[1])[0];
         return {
           ...f,
-          label: `شهر ${MONTH_AR[f.month - 1]} / ${f.year}`,
+          label: `${MONTH_AR[f.month - 1]}/${f.year}`,
           employeesCount: Object.keys(emps).length,
           topEmp: topEmpEntry ? `${topEmpEntry[0]} (${topEmpEntry[1]})` : "—",
           topType: topTypeE ? `${topTypeE[0]} (${topTypeE[1]})` : "—",
