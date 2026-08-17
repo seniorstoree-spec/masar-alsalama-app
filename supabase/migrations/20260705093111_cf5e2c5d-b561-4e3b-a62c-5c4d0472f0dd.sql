@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS production_sections_name_unique_ci ON public.production_sections (LOWER(TRIM(name)));
