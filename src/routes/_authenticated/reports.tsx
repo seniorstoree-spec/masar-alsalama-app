@@ -37,7 +37,17 @@ type SortKey = "date" | "code" | "severity" | null;
 type SortDir = "asc" | "desc";
 
 const COLUMNS: ColumnDefinition[] = [
-  { header: "التاريخ", sortKey: "date", value: (v) => v.violation_date || "" },
+  { 
+    header: "التاريخ", 
+    sortKey: "date", 
+    value: (v) => {
+      const d = v.violation_date;
+      if (!d) return "";
+      const parts = String(d).split("-");
+      if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      return d;
+    }
+  },
   { header: "الاسم", value: (v) => v.employees?.name || v.employee_name || "" },
   { header: "الكود", sortKey: "code", value: (v) => v.employees?.code || v.employee_code || "" },
   { header: "المسمى الوظيفي", value: (v) => v.employees?.job_title || v.employee_job_title || "" },
@@ -380,7 +390,7 @@ function ReportsPage() {
                     );
                   }
                   return (
-                    <TableCell key={c.header} className={`text-sm ${c.header === "الكود" ? "font-mono" : ""} ${c.header === "الاسم" ? "font-medium" : ""}`}>
+                    <TableCell key={c.header} className={`text-sm ${c.header === "الكود" ? "font-mono" : ""} ${c.header === "الاسم" ? "font-medium" : ""} ${c.header === "التاريخ" ? "whitespace-nowrap font-mono" : ""}`}>
                       {val || "—"}
                     </TableCell>
                   );
