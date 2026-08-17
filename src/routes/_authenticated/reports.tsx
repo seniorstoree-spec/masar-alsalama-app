@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { X, ArrowUp, ArrowDown, Eye, FileText, FileSpreadsheet } from "lucide-react";
@@ -46,7 +45,6 @@ const COLUMNS: ColumnDefinition[] = [
   { header: "القسم الإنتاجي", value: (v) => v.production_section || "" },
   { header: "نوع المخالفة", value: (v) => v.violation_types?.name || "" },
   { header: "الخطورة", sortKey: "severity", value: (v) => v.severity || "" },
-  { header: "الحالة", value: (v) => v.status || "" },
   { header: "مهندس الجودة", value: (v) => v.inspector_name || "" },
   { header: "ملاحظات", value: (v) => v.notes || "" },
 ];
@@ -58,200 +56,273 @@ function buildCycles(count = 24) {
   const now = new Date();
   let y = now.getFullYear();
   let m = now.getMonth();
-  if (now.getDate() < 15) m -= 1;
-  const list: { id: string; label: string; from: string; to: string; current: boolean }[] = [];
+
+  const out: { id: string; label: string; from: string; to: string; current: boolean }[] = [];
+
   for (let i = 0; i < count; i++) {
-    const start = new Date(y, m - i, 15);
-    const end = new Date(y, m - i + 1, 15);
-    list.push({
-      id: fmt(start),
-      label: `${AR_MONTHS[start.getMonth()]} ${start.getFullYear()} (15/${start.getMonth() + 1} – 15/${end.getMonth() + 1})`,
-      from: fmt(start),
-      to: fmt(new Date(end.getFullYear(), end.getMonth(), 14)),
-      current: i === 0,
+    const curEndMonth = m;
+    const curEndYear = y;
+
+    let prevMonth = m - 1;
+    let prevYear = y;
+    if (prevMonth < 0) {
+      prevMonth = 11;
+      prevYear--;
+    }
+
+    const fromStr = `${prevYear}-${String(prevMonth + 1).padStart(2, "0")}-16`;
+    const toStr = `${curEndYear}-${String(curEndMonth + 1).padStart(2, "0")}-15`;
+
+    const label = `دورة 16 ${AR_MONTHS[prevMonth]} — 15 ${AR_MONTHS[curEndMonth]} ${curEndYear}`;
+    const today = fmt(now);
+    const isCur = today >= fromStr && today <= toStr;
+
+    out.push({
+      id: `${fromStr}_${toStr}`,
+      label,
+      from: fromStr,
+      to: toStr,
+      current: isCur,
     });
+
+    m--;
+    if (m < 0) {
+      m = 11;
+      y--;
+    }
   }
-  return list;
+
+  return out;
 }
 
 function ReportsPage() {
-  const [nameQ, setNameQ] = useState("");
-  const [codeQ, setCodeQ] = useState("");
-  const [deptQ, setDeptQ] = useState("");
-  const [typeQ, setTypeQ] = useState("");
-  const [prodSectionQ, setProdSectionQ] = useState("");
-  const cycles = useMemo(() => buildCycles(), []);
-  const [cycleId, setCycleId] = useState<string>(cycles[0]?.id ?? "");
-  const cycle = cycles.find((c) => c.id === cycleId) || null;
-  const [from, setFrom] = useState(cycles[0]?.from ?? "");
-  const [to, setTo] = useState(cycles[0]?.to ?? "");
+  const [search, setSearch] = useState("");
+  const [dept, setDept] = useState("all");
+  const [prodSec, setProdSec] = useState("all");
+  const [typeId, setTypeId] = useState("all");
+  const [severity, setSeverity] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [cycleId, setCycleId] = useState<string>("all");
+
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Queries
+  const cycles = useMemo(() => buildCycles(24), []);
+
   const { data: violations = [] } = useViolations(REPORTS_VIOLATIONS_QUERY_KEY);
 
-  const { data: types = [] } = useQuery({
+  const { data: vTypes = [] } = useQuery({
     queryKey: ["violation-types"],
     queryFn: () => violationTypesService.getViolationTypes(),
   });
 
-  const { data: prodSections = [] } = useQuery({
+  const { data: pSections = [] } = useQuery({
     queryKey: ["production-sections"],
     queryFn: () => productionSectionsService.getProductionSections(),
   });
 
-  const applyCycle = (id: string) => {
-    setCycleId(id);
-    if (id === "all") { setFrom(""); setTo(""); return; }
-    const c = cycles.find((x) => x.id === id);
-    if (c) { setFrom(c.from); setTo(c.to); }
-  };
-
-  const toggleSort = (key: Exclude<SortKey, null>) => {
-    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else { setSortKey(key); setSortDir(key === "date" ? "desc" : "asc"); }
-  };
-
-  const SortIcon = ({ k }: { k: Exclude<SortKey, null> }) =>
-    sortKey !== k ? null : sortDir === "asc" ? <ArrowUp className="w-3 h-3 inline mr-1" /> : <ArrowDown className="w-3 h-3 inline mr-1" />;
-
   const departments = useMemo(() => {
     const s = new Set<string>();
-    violations.forEach((v: any) => {
+    (violations as any[]).forEach((v) => {
       const d = v.employees?.department || v.employee_department;
       if (d) s.add(d);
     });
-    return Array.from(s);
+    return Array.from(s).sort();
   }, [violations]);
 
+  const applyCycle = (cid: string) => {
+    setCycleId(cid);
+    if (cid === "all") {
+      setFrom("");
+      setTo("");
+      return;
+    }
+    const found = cycles.find((c) => c.id === cid);
+    if (found) {
+      setFrom(found.from);
+      setTo(found.to);
+    }
+  };
+
   const filtered = useMemo(() => {
-    const rows = violations.filter((v: any) => {
-      const name = (v.employees?.name || v.employee_name || "").toLowerCase();
-      const code = (v.employees?.code || v.employee_code || "").toLowerCase();
-      const dept = v.employees?.department || v.employee_department || "";
-      const typeId = v.violation_type_id || "";
-      const prod = v.production_section || "";
-      if (nameQ && !name.includes(nameQ.toLowerCase())) return false;
-      if (codeQ && !code.includes(codeQ.toLowerCase())) return false;
-      if (deptQ && dept !== deptQ) return false;
-      if (typeQ && typeId !== typeQ) return false;
-      if (prodSectionQ && prod !== prodSectionQ) return false;
-      if (from && (v.violation_date || "") < from) return false;
-      if (to && (v.violation_date || "") > to) return false;
+    let rows = (violations as any[]).filter((v) => {
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const f = [
+          v.employees?.name || v.employee_name || "",
+          v.employees?.code || v.employee_code || "",
+          v.employees?.department || v.employee_department || "",
+          v.production_section || "",
+        ];
+        if (!f.some((x) => String(x).toLowerCase().includes(q))) return false;
+      }
+
+      const d = v.employees?.department || v.employee_department || "";
+      if (dept !== "all" && d !== dept) return false;
+
+      if (prodSec !== "all" && (v.production_section || "") !== prodSec) return false;
+
+      if (typeId !== "all" && String(v.violation_type_id) !== typeId) return false;
+
+      if (severity !== "all" && v.severity !== severity) return false;
+
+      const dt = String(v.violation_date || "");
+      if (from && dt < from) return false;
+      if (to && dt > to) return false;
+
       return true;
     });
-    if (!sortKey) return rows;
-    const sorted = [...rows].sort((a: any, b: any) => {
-      let av: any, bv: any;
-      if (sortKey === "date") { av = a.violation_date || ""; bv = b.violation_date || ""; }
-      else if (sortKey === "code") { av = a.employees?.code || a.employee_code || ""; bv = b.employees?.code || b.employee_code || ""; }
-      else { av = SEVERITY_RANK[a.severity] || 0; bv = SEVERITY_RANK[b.severity] || 0; }
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [violations, nameQ, codeQ, deptQ, typeQ, prodSectionQ, from, to, sortKey, sortDir]);
 
-  const typeName = types.find((t: any) => t.id === typeQ)?.name || "";
+    if (sortKey) {
+      rows = [...rows].sort((a, b) => {
+        let res = 0;
+        if (sortKey === "date") {
+          res = String(a.violation_date || "").localeCompare(String(b.violation_date || ""));
+        } else if (sortKey === "code") {
+          const ca = String(a.employees?.code || a.employee_code || "");
+          const cb = String(b.employees?.code || b.employee_code || "");
+          res = ca.localeCompare(cb, "ar", { numeric: true });
+        } else if (sortKey === "severity") {
+          res = (SEVERITY_RANK[a.severity] || 0) - (SEVERITY_RANK[b.severity] || 0);
+        }
+        return sortDir === "asc" ? res : -res;
+      });
+    }
+
+    return rows;
+  }, [violations, search, dept, prodSec, typeId, severity, from, to, sortKey, sortDir]);
+
+  const toggleSort = (k: Exclude<SortKey, null>) => {
+    if (sortKey === k) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ k }: { k: Exclude<SortKey, null> }) => {
+    if (sortKey !== k) return null;
+    return sortDir === "asc" ? <ArrowUp className="w-3.5 h-3.5 inline mr-1" /> : <ArrowDown className="w-3.5 h-3.5 inline mr-1" />;
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setDept("all");
+    setProdSec("all");
+    setTypeId("all");
+    setSeverity("all");
+    setFrom("");
+    setTo("");
+    setCycleId("all");
+    setSortKey("date");
+    setSortDir("desc");
+  };
+
+  const activeFilters = useMemo(() => {
+    const list: { k: string; v: string }[] = [];
+    if (search.trim()) list.push({ k: "البحث", v: search.trim() });
+    if (dept !== "all") list.push({ k: "القسم", v: dept });
+    if (prodSec !== "all") list.push({ k: "القسم الإنتاجي", v: prodSec });
+    if (typeId !== "all") {
+      const t = vTypes.find((x: any) => String(x.id) === typeId);
+      list.push({ k: "نوع المخالفة", v: t?.name || typeId });
+    }
+    if (severity !== "all") list.push({ k: "الخطورة", v: severity });
+    if (from || to) list.push({ k: "الفترة", v: `${from || "بدون بداية"} إلى ${to || "بدون نهاية"}` });
+    return list;
+  }, [search, dept, prodSec, typeId, severity, from, to, vTypes]);
+
+  const handleExcelExport = () => exportToExcel("تقرير_المخالفات", "المخالفات", COLUMNS, filtered);
+
+  const handlePdfExport = () => {
+    const sub = activeFilters.length ? `الفلاتر: ${activeFilters.map((f) => `${f.k}: ${f.v}`).join(" | ")}` : "جميع المخالفات بدون فلاتر";
+    exportToPdf("تقرير مخالفات العاملين", sub, COLUMNS, filtered);
+  };
+
   const sortLabel = sortKey
-    ? `${COLUMNS.find((c) => c.sortKey === sortKey)?.header} (${sortDir === "asc" ? "تصاعدي" : "تنازلي"})`
+    ? `${sortKey === "date" ? "التاريخ" : sortKey === "code" ? "كود الموظف" : "مستوى الخطورة"} (${sortDir === "asc" ? "تصاعدي" : "تنازلي"})`
     : "بدون فرز";
-
-  const activeFilters = [
-    nameQ && { k: "اسم الموظف", v: nameQ },
-    codeQ && { k: "الكود", v: codeQ },
-    deptQ && { k: "القسم", v: deptQ },
-    typeName && { k: "نوع المخالفة", v: typeName },
-    prodSectionQ && { k: "القسم الإنتاجي", v: prodSectionQ },
-    cycle && { k: "الشهر", v: cycle.label },
-    from && { k: "من تاريخ", v: from },
-    to && { k: "إلى تاريخ", v: to },
-  ].filter(Boolean) as { k: string; v: string }[];
-
-  const rowsOf = (list: any[]) => list.map((v: any) => COLUMNS.map((c) => c.value(v)));
-  const buildRows = () => rowsOf(filtered);
-
-  const handleExportXlsx = async (list: any[] = filtered, label = "") => {
-    await exportToExcel(
-      `تقرير_المخالفات_${label || new Date().toISOString().slice(0, 10)}`,
-      "التقرير",
-      COLUMNS,
-      list,
-    );
-  };
-
-  const handleExportPdf = (list: any[] = filtered, label = "") => {
-    const meta = label
-      ? `الشهر: ${label}`
-      : activeFilters.map((f) => `${f.k}: ${f.v}`).join(" • ") || "بدون فلاتر";
-
-    exportToPdf(
-      "تقرير المخالفات",
-      `عدد السجلات: ${list.length} • الفرز: ${sortLabel}<br>الفلاتر: ${meta}`,
-      COLUMNS,
-      list,
-    );
-  };
-
-  const clearFilters = () => { setNameQ(""); setCodeQ(""); setDeptQ(""); setTypeQ(""); setProdSectionQ(""); applyCycle(cycles[0]?.id ?? "all"); };
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <PageHeader
-        title="التقارير"
-        subtitle={`${filtered.length} مخالفة`}
+        title="تقارير المخالفات"
+        subtitle={`إجمالي النتائج: ${filtered.length} من أصل ${violations.length} مخالفة`}
         actions={
-          <Button onClick={() => setPreviewOpen(true)}>
-            <Eye className="w-4 h-4 ml-1" /> معاينة وتصدير
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={filtered.length === 0}>
+              <Eye className="w-4 h-4 ml-1" /> معاينة التصدير
+            </Button>
+            <Button variant="outline" onClick={handleExcelExport} disabled={filtered.length === 0}>
+              <FileSpreadsheet className="w-4 h-4 ml-1" /> تصدير Excel
+            </Button>
+            <Button onClick={handlePdfExport} disabled={filtered.length === 0}>
+              <FileText className="w-4 h-4 ml-1" /> طباعة / PDF
+            </Button>
+          </div>
         }
       />
 
       <Card>
-        <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">اسم الموظف</Label>
-            <Input value={nameQ} onChange={(e) => setNameQ(e.target.value)} />
+        <CardContent className="pt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+          <div className="space-y-1 col-span-2">
+            <Label className="text-xs">بحث سريع (الاسم / الكود / القسم)</Label>
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="اكتب الاسم أو الكود أو القسم..." />
           </div>
+
           <div className="space-y-1">
-            <Label className="text-xs">الكود</Label>
-            <Input value={codeQ} onChange={(e) => setCodeQ(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">القسم</Label>
-            <Select value={deptQ || "all"} onValueChange={(v) => setDeptQ(v === "all" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="كل الأقسام" /></SelectTrigger>
+            <Label className="text-xs">القسم (الإدارة)</Label>
+            <Select value={dept} onValueChange={setDept}>
+              <SelectTrigger><SelectValue placeholder="الكل" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">كل الأقسام</SelectItem>
                 {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">نوع المخالفة</Label>
-            <Select value={typeQ || "all"} onValueChange={(v) => setTypeQ(v === "all" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="كل الأنواع" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">كل الأنواع</SelectItem>
-                {types.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+
           <div className="space-y-1">
             <Label className="text-xs">القسم الإنتاجي</Label>
-            <Select value={prodSectionQ || "all"} onValueChange={(v) => setProdSectionQ(v === "all" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="كل الأقسام الإنتاجية" /></SelectTrigger>
+            <Select value={prodSec} onValueChange={setProdSec}>
+              <SelectTrigger><SelectValue placeholder="الكل" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">كل الأقسام الإنتاجية</SelectItem>
-                {prodSections.map((s: any) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                {pSections.map((s: any) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">نوع المخالفة</Label>
+            <Select value={typeId} onValueChange={setTypeId}>
+              <SelectTrigger><SelectValue placeholder="الكل" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الأنواع</SelectItem>
+                {vTypes.map((t: any) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">مستوى الخطورة</Label>
+            <Select value={severity} onValueChange={setSeverity}>
+              <SelectTrigger><SelectValue placeholder="الكل" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل المستويات</SelectItem>
+                <SelectItem value="منخفض">منخفض</SelectItem>
+                <SelectItem value="متوسط">متوسط</SelectItem>
+                <SelectItem value="عالي">عالي</SelectItem>
+                <SelectItem value="حرج">حرج</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-1 col-span-2">
-            <Label className="text-xs">الشهر (دورة 15 إلى 15)</Label>
+            <Label className="text-xs">الشهر (دورة 16 إلى 15)</Label>
             <Select value={cycleId || "all"} onValueChange={applyCycle}>
               <SelectTrigger><SelectValue placeholder="اختر الشهر" /></SelectTrigger>
               <SelectContent>
@@ -262,10 +333,12 @@ function ReportsPage() {
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-1">
             <Label className="text-xs">من تاريخ</Label>
             <Input type="date" value={from} onChange={(e) => { setCycleId("all"); setFrom(e.target.value); }} />
           </div>
+
           <div className="space-y-1">
             <Label className="text-xs">إلى تاريخ</Label>
             <Input type="date" value={to} onChange={(e) => { setCycleId("all"); setTo(e.target.value); }} />
@@ -305,9 +378,6 @@ function ReportsPage() {
                         <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium ${severityColor[val as SeverityLevel] || ""}`}>{val}</span>
                       </TableCell>
                     );
-                  }
-                  if (c.header === "الحالة") {
-                    return <TableCell key={c.header}><Badge variant={val === "مغلقة" ? "secondary" : "default"}>{val}</Badge></TableCell>;
                   }
                   return (
                     <TableCell key={c.header} className={`text-sm ${c.header === "الكود" ? "font-mono" : ""} ${c.header === "الاسم" ? "font-medium" : ""}`}>
@@ -352,42 +422,38 @@ function ReportsPage() {
               )}
             </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">ترتيب الأعمدة في الملف</div>
-              <div className="flex flex-wrap gap-2">
-                {COLUMNS.map((c, i) => (
-                  <span key={c.header} className="rounded-md border px-2 py-1 text-xs">{i + 1}. {c.header}</span>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">أول 5 صفوف</div>
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted">
-                    <tr>{COLUMNS.map((c) => <th key={c.header} className="px-2 py-1 text-right whitespace-nowrap">{c.header}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {buildRows().slice(0, 5).map((r, i) => (
-                      <tr key={i} className="border-t">
-                        {r.map((cell, j) => <td key={j} className="px-2 py-1 whitespace-nowrap">{cell || "—"}</td>)}
-                      </tr>
+            <div className="border rounded-md overflow-x-auto max-h-[300px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {COLUMNS.map((c) => (
+                      <TableHead key={c.header} className="text-right text-xs whitespace-nowrap">{c.header}</TableHead>
                     ))}
-                    {filtered.length === 0 && (
-                      <tr><td colSpan={COLUMNS.length} className="px-2 py-3 text-center text-muted-foreground">لا توجد بيانات</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.slice(0, 10).map((v: any) => (
+                    <TableRow key={v.id}>
+                      {COLUMNS.map((c) => (
+                        <TableCell key={c.header} className="text-xs whitespace-nowrap">{c.value(v) || "—"}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {filtered.length > 10 && (
+                <div className="p-2 text-center text-xs text-muted-foreground bg-muted/30">
+                  يتم عرض أول 10 سجلات فقط كمعاينة من أصل {filtered.length}
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2 border-t">
-              <Button variant="outline" onClick={() => handleExportPdf()} disabled={filtered.length === 0}>
-                <FileText className="w-4 h-4 ml-1" /> تصدير PDF
-              </Button>
-              <Button onClick={() => handleExportXlsx()} disabled={filtered.length === 0}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={handleExcelExport}>
                 <FileSpreadsheet className="w-4 h-4 ml-1" /> تصدير Excel
+              </Button>
+              <Button onClick={handlePdfExport}>
+                <FileText className="w-4 h-4 ml-1" /> طباعة / PDF
               </Button>
             </div>
           </div>
