@@ -77,7 +77,7 @@ function ArchivePage() {
   const [monthSel, setMonthSel] = useState("all");
   const [yearSel, setYearSel] = useState("all");
 
-  // Custom added month folders (e.g. September included by default)
+  // Custom added month folders (September included by default)
   const [customFolders, setCustomFolders] = useState<string[]>([`${currentYear}-09`]);
   const [newMonthSel, setNewMonthSel] = useState("9");
   const [newYearSel, setNewYearSel] = useState(String(currentYear));
@@ -110,13 +110,15 @@ function ArchivePage() {
 
   const archive = useMemo(() => {
     const map: Record<string, { key: string; year: number; month: number; rows: any[] }> = {};
-    const activeYear = yearSel !== "all" ? Number(yearSel) : currentYear;
+    const targetYears = yearSel !== "all" ? [Number(yearSel)] : [currentYear];
 
-    // Ensure September folder is always present for the active/current year
-    const sepKey = `${activeYear}-09`;
-    if ((monthSel === "all" || monthSel === "9") && (yearSel === "all" || yearSel === String(activeYear))) {
-      map[sepKey] = { key: sepKey, year: activeYear, month: 9, rows: [] };
-    }
+    // Always ensure September folder exists for current/selected years
+    targetYears.forEach((y) => {
+      if (monthSel === "all" || monthSel === "9") {
+        const sepKey = `${y}-09`;
+        if (!map[sepKey]) map[sepKey] = { key: sepKey, year: y, month: 9, rows: [] };
+      }
+    });
 
     // Include custom created folders
     customFolders.forEach((key) => {
