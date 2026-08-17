@@ -588,9 +588,10 @@ function ArchivePage() {
                   <FileDown className="w-4 h-4 ml-1" /> Excel + PDF
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
