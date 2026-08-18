@@ -11,82 +11,55 @@ export default async function handler(req: any, res: any) {
   try {
     console.log("[Cron Debug] Starting deep debugging cron job execution...");
     
-    // 2. Initialize Supabase
+    // 1.5 Initialize Supabase with Service Role Key (bypasses RLS)
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
-    const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_B9Z5RKCPUNk8a-AoLriI5g_c4Z0t1ZL";
+    // We MUST use the Service Role Key here to bypass RLS in the Cron Job. 
+    // The user must set SUPABASE_SERVICE_ROLE_KEY in Vercel.
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl) {
-      throw new Error("supabaseUrl is missing.");
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[Cron Fatal Error] Missing SUPABASE_SERVICE_ROLE_KEY. You must add it to Vercel Environment Variables to bypass RLS.");
+      throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY in environment variables.");
     }
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // 2.5 Authenticate to bypass RLS
-    console.log("[Cron Debug] Attempting to authenticate to bypass RLS...");
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: "seniorstoree@gmail.com",
-      password: "Eslam@1986",
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
     });
-
-    if (authError) {
-      console.log("[Cron Debug] Auth failed for seniorstoree, trying eslamkamel...");
-      const { error: authError2 } = await supabase.auth.signInWithPassword({
-        email: "eslamkamel.emk@gmail.com",
-        password: "Eslam@1986",
-      });
-      if (authError2) {
-        console.error("[Cron Debug] Auth failed for both accounts. Continuing anonymously, but RLS might block reads.");
-      } else {
-        console.log("[Cron Debug] Authenticated successfully with eslamkamel.emk@gmail.com");
-      }
-    } else {
-      console.log("[Cron Debug] Authenticated successfully with seniorstoree@gmail.com");
-    }
-
-    // 3. Fallback Query Strategy: Check Multiple Tables
-    const tablesToTry = [
-      "violations",
-      "safety_violations",
-      "incidents",
-      "inspection_reports",
-      "reports"
-    ];
-
-    let activeTable = "";
-    let recentRecords: any[] = [];
     
-    for (const tableName of tablesToTry) {
-      console.log(`[Cron Debug] Attempting to fetch from table: ${tableName}...`);
-      const { data, error } = await supabase
-        .from(tableName)
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (error) {
-        console.log(`[Cron Debug] Table ${tableName} failed or does not exist:`, error.message);
-        continue;
-      }
-
-      if (data && data.length > 0) {
-        console.log(`[Cron Debug] SUCCESS! Found data in table: ${tableName}`);
-        activeTable = tableName;
-        recentRecords = data;
-        break; // Stop checking other tables
-      } else {
-        console.log(`[Cron Debug] Table ${tableName} is empty.`);
-      }
-    }
-
-    if (recentRecords.length === 0) {
-      console.log("[Cron Debug] ALL attempted tables are empty or failed.");
+    // 2. Fetch 5 recent rows without date filter for Schema Debugging
+    console.log("[Cron Debug] Fetching 5 most recent records using Service Role Key (Bypassing RLS)...");
+    const { data: recentRecords, error: recentError } = await supabase
+      .from("violations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(5);
+      
+    if (recentError) {
+      console.error("[Cron Debug] Error fetching recent records from 'violations':", recentError);
     } else {
-      console.log(`[Cron Debug] Active Table Data (${activeTable}):`, JSON.stringify(recentRecords));
+      console.log("[Cron Debug] VIOLATIONS DATA (Admin Access):", JSON.stringify(recentRecords));
     }
 
-    // 4. Pass the fetched raw data directly to the email template
-    const allViolations = recentRecords;
-    console.log(`[Cron Debug] Total records to send in email: ${allViolations.length}`);
+    // 3. Fetch Violations (Last 48 hours temporarily for testing)
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    console.log(`[Cron Debug] Fetching violations created after ${fortyEightHoursAgo}`);
+    
+    const { data: violations, error } = await supabase
+      .from("violations")
+      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
+      .gte("created_at", fortyEightHoursAgo)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(`Supabase query failed: ${error.message}`);
+    }
+
+    const allViolations = violations || [];
+    console.log(`[Cron Debug] Total violations fetched in last 48h: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
@@ -130,14 +103,11 @@ export default async function handler(req: any, res: any) {
     
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">تقرير مخالفات آخر 48 ساعة للتبنيط (Debug)</h2>
-        <p><strong>الجدول النشط (Active Table):</strong> <span style="font-weight: bold; color: #2563eb;">${activeTable || "None"}</span></p>
-        <p><strong>إجمالي المخالفات المجلوبة:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
+        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">التقرير اليومي للمخالفات - العبد للأغذية</h2>
+        <p><strong>تاريخ التقرير:</strong> ${reportDate}</p>
+        <p><strong>إجمالي المخالفات المسجلة:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
         
         ${generateTable(allViolations)}
-        
-        <h3 style="margin-top: 40px; color: #ef4444;">البيانات الخام (Raw JSON):</h3>
-        <pre style="background: #f1f5f9; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 11px;" dir="ltr">${JSON.stringify(recentRecords, null, 2)}</pre>
         
         <p style="margin-top: 30px; font-size: 12px; color: #94a3b8; text-align: center;">
           هذه رسالة تلقائية من نظام مسار السلامة - العبد للأغذية. لا تقم بالرد على هذه الرسالة.
@@ -149,7 +119,7 @@ export default async function handler(req: any, res: any) {
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: "مسار السلامة <onboarding@resend.dev>",
       to: recipients,
-      subject: `[Debug] تقرير مخالفات يوم ${reportDate}`,
+      subject: `تقرير مخالفات يوم ${reportDate}`,
       html: emailHtml,
     });
 
