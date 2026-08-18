@@ -9,28 +9,11 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // 2. Calculate shift boundaries in Egypt time (Africa/Cairo)
-    // The cron runs at 10:00 AM, so we analyze the previous 24h (Yesterday 07:00 AM to Today 07:00 AM)
-    const nowEgypt = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
-    const yesterday = new Date(nowEgypt.getTime() - 24 * 60 * 60 * 1000);
+    console.log("[Cron Debug] Starting simplified cron job execution...");
     
-    const formatYMD = (d: Date) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return `${y}-${m}-${day}`;
-    };
-    
-    const yesterdayYMD = formatYMD(yesterday);
-    const todayYMD = formatYMD(nowEgypt);
-    
-    // Morning Shift: Yesterday 07:00 AM to Yesterday 06:59:59 PM
-    const morningStart = `${yesterdayYMD}T07:00:00+03:00`;
-    const morningEnd = `${yesterdayYMD}T18:59:59.999+03:00`;
-
-    // Night Shift: Yesterday 07:00 PM to Today 06:59:59 AM
-    const nightStart = `${yesterdayYMD}T19:00:00+03:00`;
-    const nightEnd = `${todayYMD}T06:59:59.999+03:00`;
+    // 2. Calculate the sliding 24-hour window in UTC
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const rightNow = new Date().toISOString();
 
     // 3. Initialize Supabase
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
@@ -42,29 +25,42 @@ export default async function handler(req: any, res: any) {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 4. Fetch Violations for the entire 24-hour cycle
+    // 4. Fetch Violations from the last 24 hours
+    console.log(`[Cron Debug] Fetching violations from ${twentyFourHoursAgo} to ${rightNow}`);
     const { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", morningStart)
-      .lte("created_at", nightEnd);
+      .gte("created_at", twentyFourHoursAgo)
+      .lte("created_at", rightNow);
 
     if (error) {
-      console.error("Supabase Error:", error);
-      return res.status(500).json({ error: "Database error", details: error.message });
+      throw new Error(`Supabase query failed: ${error.message}`);
     }
 
     const allViolations = violations || [];
     
-    // Categorize violations by shift
-    const morningViolations = allViolations.filter(v => {
-      const d = new Date(v.created_at).getTime();
-      return d >= new Date(morningStart).getTime() && d <= new Date(morningEnd).getTime();
-    });
-    
-    const nightViolations = allViolations.filter(v => {
-      const d = new Date(v.created_at).getTime();
-      return d >= new Date(nightStart).getTime() && d <= new Date(nightEnd).getTime();
+    // 5. In-Memory Sorting by Cairo Local Hour
+    const morningViolations: any[] = [];
+    const nightViolations: any[] = [];
+
+    allViolations.forEach(v => {
+      const d = new Date(v.created_at);
+      // Get the hour in Egypt time (0-23)
+      const hourStr = new Intl.DateTimeFormat('en-US', { 
+        timeZone: 'Africa/Cairo', 
+        hour: 'numeric', 
+        hourCycle: 'h23' 
+      }).format(d);
+      
+      const hour = parseInt(hourStr, 10);
+      
+      // Morning Shift: hour >= 7 and hour < 19
+      if (hour >= 7 && hour < 19) {
+        morningViolations.push(v);
+      } else {
+        // Night Shift: hour >= 19 or hour < 7
+        nightViolations.push(v);
+      }
     });
 
     console.log(`[Cron Debug] Total: ${allViolations.length} | Morning: ${morningViolations.length} | Night: ${nightViolations.length}`);
@@ -104,14 +100,17 @@ export default async function handler(req: any, res: any) {
       `;
     };
 
-    // 5. Generate Email HTML
+    // 6. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
     const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
     
+    // For email display purposes, we can show yesterday's date in Cairo time
+    const reportDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toLocaleDateString('en-GB', { timeZone: 'Africa/Cairo' });
+
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">التقرير اليومي للمخالفات - العبد للأغذية</h2>
-        <p><strong>تاريخ التقرير:</strong> ${yesterdayYMD}</p>
+        <p><strong>تاريخ التقرير:</strong> ${reportDate}</p>
         <p><strong>إجمالي المخالفات المسجلة للورديتين:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
         
         <div style="margin-top: 30px;">
@@ -130,23 +129,23 @@ export default async function handler(req: any, res: any) {
       </div>
     `;
 
-    // 6. Send Email using Resend
+    console.log("[Cron Debug] Sending email via Resend...");
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: "مسار السلامة <onboarding@resend.dev>",
       to: recipients,
-      subject: `التقرير اليومي للمخالفات - ${dateString}`,
+      subject: `التقرير اليومي للمخالفات - ${reportDate}`,
       html: emailHtml,
     });
 
     if (emailError) {
-      console.error("Resend Error:", emailError);
-      return res.status(500).json({ error: "Email delivery failed", details: emailError });
+      throw new Error(`Resend API failed: ${JSON.stringify(emailError)}`);
     }
 
-    return res.status(200).json({ success: true, count, email_id: emailData?.id });
+    console.log("[Cron Debug] Email sent successfully!");
+    return res.status(200).json({ success: true, count: allViolations.length, email_id: emailData?.id });
 
   } catch (err: any) {
-    console.error("Unexpected Error in Cron:", err);
-    return res.status(500).json({ error: err.message });
+    console.error("[Cron Fatal Error]:", err.message || err);
+    return res.status(500).json({ error: "Internal Server Error", details: err.message || String(err) });
   }
 }
