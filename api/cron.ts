@@ -44,7 +44,7 @@ export default async function handler(req: any, res: any) {
 
     // 5. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslam.kamel@elabdfoods.com"];
+    const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
     
     const count = violations ? violations.length : 0;
     
