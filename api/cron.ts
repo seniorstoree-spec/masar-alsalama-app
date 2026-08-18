@@ -93,9 +93,16 @@ export default async function handler(req: any, res: any) {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
     
+    const nowEgypt = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+    const yesterdayEgypt = new Date(nowEgypt.getTime() - 24 * 60 * 60 * 1000);
+    const y = yesterdayEgypt.getFullYear();
+    const m = String(yesterdayEgypt.getMonth() + 1).padStart(2, "0");
+    const d = String(yesterdayEgypt.getDate()).padStart(2, "0");
+    const dateString = `${y}-${m}-${d}`;
+
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">تقرير مخالفات يوم ${dateString}</h2>
+        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">تقرير مخالفات يوم ${dateString} (Test 48h)</h2>
         <p><strong>إجمالي المخالفات المسجلة:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
         
         ${generateTable(allViolations)}
