@@ -11,20 +11,7 @@ export default async function handler(req: any, res: any) {
   try {
     console.log("[Cron Debug] Starting simple calendar-day cron job execution...");
     
-    // 2. Calculate "Yesterday" in Egypt time (Africa/Cairo)
-    const nowEgypt = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
-    const yesterdayEgypt = new Date(nowEgypt.getTime() - 24 * 60 * 60 * 1000);
-    
-    const y = yesterdayEgypt.getFullYear();
-    const m = String(yesterdayEgypt.getMonth() + 1).padStart(2, "0");
-    const d = String(yesterdayEgypt.getDate()).padStart(2, "0");
-    const dateString = `${y}-${m}-${d}`;
-    
-    // Convert to ISO-8601 strings with explicit +03:00 timezone offset so Supabase compares exactly
-    const startOfYesterdayISO = `${dateString}T00:00:00+03:00`;
-    const endOfYesterdayISO = `${dateString}T23:59:59.999+03:00`;
-
-    // 3. Initialize Supabase
+    // 1.5 Initialize Supabase
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
     const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_B9Z5RKCPUNk8a-AoLriI5g_c4Z0t1ZL";
     
@@ -33,14 +20,32 @@ export default async function handler(req: any, res: any) {
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // 2. Fetch 5 recent rows without date filter for Schema Debugging
+    console.log("[Cron Debug] Fetching 5 most recent records for schema debugging...");
+    const { data: recentRecords, error: recentError } = await supabase
+      .from("violations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(5);
+      
+    if (recentError) {
+      console.error("[Cron Debug] Error fetching recent records:", recentError);
+    } else {
+      console.log("[Cron Debug] Latest 5 records schema:", JSON.stringify(recentRecords));
+    }
+    
+    // 3. Calculate 48-hour sliding window
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const rightNow = new Date().toISOString();
 
-    // 4. Fetch Violations for yesterday
-    console.log(`[Cron Debug] Fetching violations created between ${startOfYesterdayISO} and ${endOfYesterdayISO}`);
+    // 4. Fetch Violations for the last 48 hours
+    console.log(`[Cron Debug] Fetching violations created between ${fortyEightHoursAgo} and ${rightNow}`);
     const { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", startOfYesterdayISO)
-      .lte("created_at", endOfYesterdayISO);
+      .gte("created_at", fortyEightHoursAgo)
+      .lte("created_at", rightNow);
 
     if (error) {
       throw new Error(`Supabase query failed: ${error.message}`);
