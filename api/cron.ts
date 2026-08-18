@@ -9,11 +9,20 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    console.log("[Cron Debug] Starting simplified cron job execution...");
+    console.log("[Cron Debug] Starting simple calendar-day cron job execution...");
     
-    // 2. Calculate the sliding 24-hour window in UTC
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const rightNow = new Date().toISOString();
+    // 2. Calculate "Yesterday" in Egypt time (Africa/Cairo)
+    const nowEgypt = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+    const yesterdayEgypt = new Date(nowEgypt.getTime() - 24 * 60 * 60 * 1000);
+    
+    const y = yesterdayEgypt.getFullYear();
+    const m = String(yesterdayEgypt.getMonth() + 1).padStart(2, "0");
+    const d = String(yesterdayEgypt.getDate()).padStart(2, "0");
+    const dateString = `${y}-${m}-${d}`;
+    
+    // Convert to ISO-8601 strings with explicit +03:00 timezone offset so Supabase compares exactly
+    const startOfYesterdayISO = `${dateString}T00:00:00+03:00`;
+    const endOfYesterdayISO = `${dateString}T23:59:59.999+03:00`;
 
     // 3. Initialize Supabase
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
@@ -25,60 +34,35 @@ export default async function handler(req: any, res: any) {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 4. Fetch Violations from the last 24 hours
-    console.log(`[Cron Debug] Fetching violations from ${twentyFourHoursAgo} to ${rightNow}`);
+    // 4. Fetch Violations for yesterday
+    console.log(`[Cron Debug] Fetching violations created between ${startOfYesterdayISO} and ${endOfYesterdayISO}`);
     const { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", twentyFourHoursAgo)
-      .lte("created_at", rightNow);
+      .gte("created_at", startOfYesterdayISO)
+      .lte("created_at", endOfYesterdayISO);
 
     if (error) {
       throw new Error(`Supabase query failed: ${error.message}`);
     }
 
     const allViolations = violations || [];
-    
-    // 5. In-Memory Sorting by Cairo Local Hour
-    const morningViolations: any[] = [];
-    const nightViolations: any[] = [];
-
-    allViolations.forEach(v => {
-      const d = new Date(v.created_at);
-      // Get the hour in Egypt time (0-23)
-      const hourStr = new Intl.DateTimeFormat('en-US', { 
-        timeZone: 'Africa/Cairo', 
-        hour: 'numeric', 
-        hourCycle: 'h23' 
-      }).format(d);
-      
-      const hour = parseInt(hourStr, 10);
-      
-      // Morning Shift: hour >= 7 and hour < 19
-      if (hour >= 7 && hour < 19) {
-        morningViolations.push(v);
-      } else {
-        // Night Shift: hour >= 19 or hour < 7
-        nightViolations.push(v);
-      }
-    });
-
-    console.log(`[Cron Debug] Total: ${allViolations.length} | Morning: ${morningViolations.length} | Night: ${nightViolations.length}`);
+    console.log(`[Cron Debug] Total violations fetched: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
       if (items.length === 0) {
-        return `<p style="color: #64748b; margin-top: 10px; padding: 10px; background-color: #f1f5f9; border-radius: 6px; text-align: center;">لا توجد مخالفات مسجلة خلال هذه الوردية.</p>`;
+        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">الحمد لله، لا توجد أي مخالفات مسجلة لتاريخ الأمس.</p>`;
       }
       return `
-        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
           <thead>
-            <tr style="background-color: #e2e8f0; border-bottom: 2px solid #cbd5e1;">
-              <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">الكود</th>
-              <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">الاسم</th>
-              <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">القسم</th>
-              <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">نوع المخالفة</th>
-              <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">مستوى الخطورة</th>
+            <tr style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+              <th style="padding: 10px; text-align: right; border: 1px solid #e2e8f0;">الكود</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #e2e8f0;">الاسم</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #e2e8f0;">القسم</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #e2e8f0;">نوع المخالفة</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #e2e8f0;">مستوى الخطورة</th>
             </tr>
           </thead>
           <tbody>
@@ -100,28 +84,16 @@ export default async function handler(req: any, res: any) {
       `;
     };
 
-    // 6. Generate Email HTML
+    // 5. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
     const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
     
-    // For email display purposes, we can show yesterday's date in Cairo time
-    const reportDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toLocaleDateString('en-GB', { timeZone: 'Africa/Cairo' });
-
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">التقرير اليومي للمخالفات - العبد للأغذية</h2>
-        <p><strong>تاريخ التقرير:</strong> ${reportDate}</p>
-        <p><strong>إجمالي المخالفات المسجلة للورديتين:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
+        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">تقرير مخالفات يوم ${dateString}</h2>
+        <p><strong>إجمالي المخالفات المسجلة:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
         
-        <div style="margin-top: 30px;">
-          <h3 style="color: #1e40af; margin-bottom: 5px; border-bottom: 1px solid #bfdbfe; display: inline-block;">الوردية الصباحية (7:00 AM - 7:00 PM)</h3>
-          ${generateTable(morningViolations)}
-        </div>
-
-        <div style="margin-top: 40px;">
-          <h3 style="color: #1e40af; margin-bottom: 5px; border-bottom: 1px solid #bfdbfe; display: inline-block;">الوردية المسائية (7:00 PM - 7:00 AM)</h3>
-          ${generateTable(nightViolations)}
-        </div>
+        ${generateTable(allViolations)}
         
         <p style="margin-top: 30px; font-size: 12px; color: #94a3b8; text-align: center;">
           هذه رسالة تلقائية من نظام مسار السلامة - العبد للأغذية. لا تقم بالرد على هذه الرسالة.
@@ -133,7 +105,7 @@ export default async function handler(req: any, res: any) {
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: "مسار السلامة <onboarding@resend.dev>",
       to: recipients,
-      subject: `التقرير اليومي للمخالفات - ${reportDate}`,
+      subject: `تقرير مخالفات يوم ${dateString}`,
       html: emailHtml,
     });
 
