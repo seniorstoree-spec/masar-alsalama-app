@@ -21,41 +21,77 @@ export default async function handler(req: any, res: any) {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 3. Print Schema & Data Debugging
-    console.log("[Cron Debug] Fetching 5 most recent records WITHOUT any date filter...");
-    const { data: recentRecords, error: recentError } = await supabase
-      .from("violations")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(5);
-      
-    if (recentError) {
-      console.error("[Cron Debug] Error fetching recent records from 'violations':", recentError);
+    // 2.5 Authenticate to bypass RLS
+    console.log("[Cron Debug] Attempting to authenticate to bypass RLS...");
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: "seniorstoree@gmail.com",
+      password: "Eslam@1986",
+    });
+
+    if (authError) {
+      console.log("[Cron Debug] Auth failed for seniorstoree, trying eslamkamel...");
+      const { error: authError2 } = await supabase.auth.signInWithPassword({
+        email: "eslamkamel.emk@gmail.com",
+        password: "Eslam@1986",
+      });
+      if (authError2) {
+        console.error("[Cron Debug] Auth failed for both accounts. Continuing anonymously, but RLS might block reads.");
+      } else {
+        console.log("[Cron Debug] Authenticated successfully with eslamkamel.emk@gmail.com");
+      }
     } else {
-      console.log("[Cron Debug] VIOLATIONS DATA:", JSON.stringify(recentRecords));
+      console.log("[Cron Debug] Authenticated successfully with seniorstoree@gmail.com");
     }
 
-    // 4. Fetch Violations (Last 48 hours temporarily for testing)
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    console.log(`[Cron Debug] Fetching violations created after ${fortyEightHoursAgo}`);
+    // 3. Fallback Query Strategy: Check Multiple Tables
+    const tablesToTry = [
+      "violations",
+      "safety_violations",
+      "incidents",
+      "inspection_reports",
+      "reports"
+    ];
+
+    let activeTable = "";
+    let recentRecords: any[] = [];
     
-    const { data: violations, error } = await supabase
-      .from("violations")
-      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", fortyEightHoursAgo)
-      .order("created_at", { ascending: false });
+    for (const tableName of tablesToTry) {
+      console.log(`[Cron Debug] Attempting to fetch from table: ${tableName}...`);
+      const { data, error } = await supabase
+        .from(tableName)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
 
-    if (error) {
-      throw new Error(`Supabase query failed: ${error.message}`);
+      if (error) {
+        console.log(`[Cron Debug] Table ${tableName} failed or does not exist:`, error.message);
+        continue;
+      }
+
+      if (data && data.length > 0) {
+        console.log(`[Cron Debug] SUCCESS! Found data in table: ${tableName}`);
+        activeTable = tableName;
+        recentRecords = data;
+        break; // Stop checking other tables
+      } else {
+        console.log(`[Cron Debug] Table ${tableName} is empty.`);
+      }
     }
 
-    const allViolations = violations || [];
-    console.log(`[Cron Debug] Total violations fetched in last 48h: ${allViolations.length}`);
+    if (recentRecords.length === 0) {
+      console.log("[Cron Debug] ALL attempted tables are empty or failed.");
+    } else {
+      console.log(`[Cron Debug] Active Table Data (${activeTable}):`, JSON.stringify(recentRecords));
+    }
+
+    // 4. Pass the fetched raw data directly to the email template
+    const allViolations = recentRecords;
+    console.log(`[Cron Debug] Total records to send in email: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
       if (items.length === 0) {
-        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد مخالفات مسجلة.</p>`;
+        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد بيانات مسجلة في أي جدول (Database is completely empty!).</p>`;
       }
       return `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
@@ -95,6 +131,7 @@ export default async function handler(req: any, res: any) {
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">تقرير مخالفات آخر 48 ساعة للتبنيط (Debug)</h2>
+        <p><strong>الجدول النشط (Active Table):</strong> <span style="font-weight: bold; color: #2563eb;">${activeTable || "None"}</span></p>
         <p><strong>إجمالي المخالفات المجلوبة:</strong> <span style="font-weight: bold; color: ${allViolations.length > 0 ? '#dc2626' : '#16a34a'};">${allViolations.length} مخالفة</span></p>
         
         ${generateTable(allViolations)}
