@@ -6,12 +6,18 @@ export default async function handler(req: any, res: any) {
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  try {
-    // 2. Calculate the sliding 24-hour window in UTC
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const rightNow = new Date().toISOString();
+    // 2. Calculate "yesterday" boundaries in Egypt time (Africa/Cairo)
+    const nowEgypt = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+    const yesterdayEgypt = new Date(nowEgypt.getTime() - 24 * 60 * 60 * 1000);
+    
+    const y = yesterdayEgypt.getFullYear();
+    const m = String(yesterdayEgypt.getMonth() + 1).padStart(2, "0");
+    const d = String(yesterdayEgypt.getDate()).padStart(2, "0");
+    const dateString = `${y}-${m}-${d}`;
+    
+    // Convert to ISO-8601 strings with explicit +03:00 timezone offset so Supabase compares exactly
+    const startOfDay = `${dateString}T00:00:00+03:00`;
+    const endOfDay = `${dateString}T23:59:59.999+03:00`;
 
     // 3. Initialize Supabase
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
@@ -23,26 +29,37 @@ export default async function handler(req: any, res: any) {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 4. Fetch Violations from the last 24 hours
-    const { data: violations, error } = await supabase
+    // 4. Fetch Violations for yesterday
+    let { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", twentyFourHoursAgo)
-      .lte("created_at", rightNow);
+      .gte("created_at", startOfDay)
+      .lte("created_at", endOfDay);
 
     if (error) {
       console.error("Supabase Error:", error);
       return res.status(500).json({ error: "Database error", details: error.message });
     }
 
-    const count = violations ? violations.length : 0;
-    console.log(`[Cron Debug] Fetched ${count} violations created between ${twentyFourHoursAgo} and ${rightNow}`);
+    let count = violations ? violations.length : 0;
+    console.log(`[Cron Debug] Fetched ${count} violations created between ${startOfDay} and ${endOfDay}`);
+    
     if (count > 0) {
       console.log("[Cron Debug] Timestamps found:", violations!.map(v => v.created_at).join(", "));
+    } else {
+      console.log("[Cron Debug] Count is 0. Fetching latest 10 violations as fallback test.");
+      const fallback = await supabase
+        .from("violations")
+        .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
+        .order("created_at", { ascending: false })
+        .limit(10);
+        
+      if (fallback.data && fallback.data.length > 0) {
+        violations = fallback.data;
+        count = fallback.data.length;
+        console.log(`[Cron Debug] Fallback fetched ${count} violations. Latest timestamp: ${fallback.data[0].created_at}`);
+      }
     }
-    
-    // For email display purposes, we can show yesterday's date
-    const dateString = new Date(Date.now() - 24 * 60 * 60 * 1000).toLocaleDateString('en-GB');
 
     // 5. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
