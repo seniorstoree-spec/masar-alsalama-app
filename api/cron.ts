@@ -31,22 +31,27 @@ export default async function handler(req: any, res: any) {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    const startOfDay = `${dateString}T00:00:00+03:00`;
+    const endOfDay = `${dateString}T23:59:59.999+03:00`;
+
     // 4. Fetch Violations for yesterday
     const { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .eq("violation_date", dateString);
+      .gte("created_at", startOfDay)
+      .lte("created_at", endOfDay);
 
     if (error) {
       console.error("Supabase Error:", error);
       return res.status(500).json({ error: "Database error", details: error.message });
     }
 
+    const count = violations ? violations.length : 0;
+    console.log(`[Cron Debug] Fetched ${count} violations created between ${startOfDay} and ${endOfDay}`);
+
     // 5. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
     const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
-    
-    const count = violations ? violations.length : 0;
     
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
