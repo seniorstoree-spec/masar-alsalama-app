@@ -11,15 +11,12 @@ export default async function handler(req: any, res: any) {
   try {
     console.log("[Cron Debug] Starting deep debugging cron job execution...");
     
-    // 1.5 Initialize Supabase with Service Role Key (bypasses RLS)
+    // 1.5 Initialize Supabase with Anon Key
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://phgxiramgpfwikitqghn.supabase.co";
-    // We MUST use the Service Role Key here to bypass RLS in the Cron Job. 
-    // The user must set SUPABASE_SERVICE_ROLE_KEY in Vercel.
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_B9Z5RKCPUNk8a-AoLriI5g_c4Z0t1ZL";
     
     if (!supabaseUrl || !supabaseKey) {
-      console.error("[Cron Fatal Error] Missing SUPABASE_SERVICE_ROLE_KEY. You must add it to Vercel Environment Variables to bypass RLS.");
-      throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY in environment variables.");
+      throw new Error("Missing Supabase credentials in environment variables.");
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -30,36 +27,19 @@ export default async function handler(req: any, res: any) {
       }
     });
     
-    // 2. Fetch 5 recent rows without date filter for Schema Debugging
-    console.log("[Cron Debug] Fetching 5 most recent records using Service Role Key (Bypassing RLS)...");
-    const { data: recentRecords, error: recentError } = await supabase
-      .from("violations")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(5);
-      
-    if (recentError) {
-      console.error("[Cron Debug] Error fetching recent records from 'violations':", recentError);
-    } else {
-      console.log("[Cron Debug] VIOLATIONS DATA (Admin Access):", JSON.stringify(recentRecords));
-    }
-
-    // 3. Fetch Violations (Last 48 hours temporarily for testing)
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    console.log(`[Cron Debug] Fetching violations created after ${fortyEightHoursAgo}`);
+    // 2. Fetch Violations via Security Definer RPC (Bypasses RLS)
+    console.log("[Cron Debug] Fetching violations using RPC get_recent_violations (Bypasses RLS)...");
     
     const { data: violations, error } = await supabase
-      .from("violations")
-      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", fortyEightHoursAgo)
-      .order("created_at", { ascending: false });
+      .rpc("get_recent_violations", { hours_offset: 48 })
+      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)");
 
     if (error) {
-      throw new Error(`Supabase query failed: ${error.message}`);
+      throw new Error(`Supabase RPC query failed: ${error.message}`);
     }
 
     const allViolations = violations || [];
-    console.log(`[Cron Debug] Total violations fetched in last 48h: ${allViolations.length}`);
+    console.log(`[Cron Debug] Total violations fetched via RPC in last 48h: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
