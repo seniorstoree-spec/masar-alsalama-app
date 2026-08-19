@@ -47,17 +47,15 @@ export default async function handler(req: any, res: any) {
     // Actually, the cleanest way to query "yesterday" given a timezone difference when the database stores timestampz:
     // Start of yesterday (Cairo Time): YYYY-MM-DDT00:00:00+03:00
     // End of yesterday (Cairo Time): YYYY-MM-DDT23:59:59+03:00
-    const startOfYesterdayCairo = `${targetDateString}T00:00:00+03:00`;
-    const endOfYesterdayCairo = `${targetDateString}T23:59:59+03:00`;
-
-    console.log(`[Cron Debug] Fetching violations for yesterday (Cairo): ${startOfYesterdayCairo} to ${endOfYesterdayCairo}`);
+    // BUT since the database stores dates in string format (YYYY-MM-DD) in violation_date, we match exactly that string!
     
-    // 3. Fetch Violations via Direct Table Query (RLS disabled via migration)
+    console.log(`[Cron Debug] Fetching violations for yesterday (Cairo): ${targetDateString}`);
+    
+    // 3. Fetch Violations via Direct Table Query
     const { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
-      .gte("created_at", startOfYesterdayCairo)
-      .lte("created_at", endOfYesterdayCairo)
+      .eq("violation_date", targetDateString)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -69,8 +67,8 @@ export default async function handler(req: any, res: any) {
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
-      if (items.length === 0) {
-        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد بيانات مسجلة في أي جدول (Database is completely empty!).</p>`;
+      if (!items || items.length === 0) {
+        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد مخالفات مسجلة ليوم أمس.</p>`;
       }
       return `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
