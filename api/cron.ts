@@ -32,17 +32,17 @@ export default async function handler(req: any, res: any) {
     // Convert current time to UTC, then add 3 hours for Cairo
     const cairoNow = new Date(now.getTime() + (3 * 60 * 60 * 1000));
     
-    // Set to yesterday
-    const cairoYesterday = new Date(cairoNow);
-    cairoYesterday.setDate(cairoYesterday.getDate() - 1);
+    // Set to TODAY (Temporarily for testing, as requested)
+    // To revert to yesterday, change this to: cairoDate.setDate(cairoDate.getDate() - 1);
+    const cairoDate = new Date(cairoNow);
     
     // Format YYYY-MM-DD
-    const yyyy = cairoYesterday.getUTCFullYear();
-    const mm = String(cairoYesterday.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(cairoYesterday.getUTCDate()).padStart(2, '0');
+    const yyyy = cairoDate.getUTCFullYear();
+    const mm = String(cairoDate.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(cairoDate.getUTCDate()).padStart(2, '0');
     const targetDateString = `${yyyy}-${mm}-${dd}`;
     
-    console.log(`[Cron Debug] Fetching violations for yesterday (Cairo): ${targetDateString}`);
+    console.log(`[Cron Debug] Fetching violations for target date (Cairo): ${targetDateString}`);
     
     // 3. Fetch Violations via Direct Table Query
     const { data: violations, error } = await supabase
@@ -56,12 +56,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const allViolations = violations || [];
-    console.log(`[Cron Debug] Total violations fetched for yesterday: ${allViolations.length}`);
+    console.log(`[Cron Debug] Total violations fetched for target date: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
       if (!items || items.length === 0) {
-        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد مخالفات مسجلة ليوم أمس.</p>`;
+        return `<p style="color: #64748b; margin-top: 10px; padding: 15px; background-color: #f8fafc; border-radius: 6px; text-align: center;">لا توجد مخالفات مسجلة لهذا اليوم (${targetDateString}).</p>`;
       }
       return `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
