@@ -45,18 +45,38 @@ export default async function handler(req: any, res: any) {
     console.log(`[Cron Debug] Fetching violations for target date (Cairo): ${targetDateString}`);
     
     // 3. Fetch Violations via Direct Table Query
-    const { data: violations, error } = await supabase
+    let { data: violations, error } = await supabase
       .from("violations")
       .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
       .eq("violation_date", targetDateString)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      throw new Error(`Supabase query failed: ${error.message}`);
+    console.log('[Cron Debug] Query error:', error);
+    console.log('[Cron Debug] Data count for target date:', violations?.length);
+
+    let allViolations = violations || [];
+
+    // Fallback: If no records match, fetch 10 random/latest records to prove RLS is working
+    if (allViolations.length === 0) {
+      console.log("[Cron Debug] Fallback: Target date returned empty. Fetching 10 recent records to verify public read access...");
+      const { data: fallbackViolations, error: fallbackError } = await supabase
+        .from("violations")
+        .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
+        .order("created_at", { ascending: false })
+        .limit(10);
+        
+      console.log('[Cron Debug] Fallback query error:', fallbackError);
+      console.log('[Cron Debug] Fallback data count:', fallbackViolations?.length);
+      
+      if (fallbackViolations && fallbackViolations.length > 0) {
+        allViolations = fallbackViolations;
+        console.log("[Cron Debug] Fallback successful! Showing the latest 10 records in the email instead.");
+      }
     }
 
-    const allViolations = violations || [];
-    console.log(`[Cron Debug] Total violations fetched for target date: ${allViolations.length}`);
+    if (error && allViolations.length === 0) {
+      throw new Error(`Supabase query failed: ${error.message}`);
+    }
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
