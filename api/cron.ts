@@ -27,19 +27,45 @@ export default async function handler(req: any, res: any) {
       }
     });
     
-    // 2. Fetch Violations via Security Definer RPC (Bypasses RLS)
-    console.log("[Cron Debug] Fetching violations using RPC get_recent_violations (Bypasses RLS)...");
+    // 2. Calculate Yesterday's Date in Cairo Time (UTC+3)
+    const now = new Date();
+    // Convert current time to UTC, then add 3 hours for Cairo
+    const cairoNow = new Date(now.getTime() + (3 * 60 * 60 * 1000));
     
+    // Set to yesterday
+    const cairoYesterday = new Date(cairoNow);
+    cairoYesterday.setDate(cairoYesterday.getDate() - 1);
+    
+    // Format YYYY-MM-DD
+    const yyyy = cairoYesterday.getUTCFullYear();
+    const mm = String(cairoYesterday.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(cairoYesterday.getUTCDate()).padStart(2, '0');
+    const targetDateString = `${yyyy}-${mm}-${dd}`;
+    
+    const startOfYesterdayISO = `${targetDateString}T00:00:00.000Z`; // Technically this acts as 00:00 in Supabase if we treat the DB as storing UTC but representing local time, wait, better yet, just use standard offsets.
+    
+    // Actually, the cleanest way to query "yesterday" given a timezone difference when the database stores timestampz:
+    // Start of yesterday (Cairo Time): YYYY-MM-DDT00:00:00+03:00
+    // End of yesterday (Cairo Time): YYYY-MM-DDT23:59:59+03:00
+    const startOfYesterdayCairo = `${targetDateString}T00:00:00+03:00`;
+    const endOfYesterdayCairo = `${targetDateString}T23:59:59+03:00`;
+
+    console.log(`[Cron Debug] Fetching violations for yesterday (Cairo): ${startOfYesterdayCairo} to ${endOfYesterdayCairo}`);
+    
+    // 3. Fetch Violations via Direct Table Query (RLS disabled via migration)
     const { data: violations, error } = await supabase
-      .rpc("get_recent_violations", { hours_offset: 48 })
-      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)");
+      .from("violations")
+      .select("*, employees(id, name, code, department, job_title), violation_types(id, name)")
+      .gte("created_at", startOfYesterdayCairo)
+      .lte("created_at", endOfYesterdayCairo)
+      .order("created_at", { ascending: false });
 
     if (error) {
-      throw new Error(`Supabase RPC query failed: ${error.message}`);
+      throw new Error(`Supabase query failed: ${error.message}`);
     }
 
     const allViolations = violations || [];
-    console.log(`[Cron Debug] Total violations fetched via RPC in last 48h: ${allViolations.length}`);
+    console.log(`[Cron Debug] Total violations fetched for yesterday: ${allViolations.length}`);
 
     // Helper function to generate HTML for a table
     const generateTable = (items: any[]) => {
@@ -79,7 +105,7 @@ export default async function handler(req: any, res: any) {
     // 5. Generate Email HTML
     const resend = new Resend(process.env.RESEND_API_KEY);
     const recipients = process.env.EMAIL_RECIPIENTS ? process.env.EMAIL_RECIPIENTS.split(",") : ["eslamkamel.emk@gmail.com"];
-    const reportDate = new Date().toLocaleDateString('en-GB', { timeZone: 'Africa/Cairo' });
+    const reportDate = targetDateString;
     
     const emailHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">

@@ -1,0 +1,1 @@
+CREATE POLICY "Allow public read" ON public.violations FOR SELECT USING (true);
