@@ -42,13 +42,6 @@ export default async function handler(req: any, res: any) {
     const dd = String(cairoYesterday.getUTCDate()).padStart(2, '0');
     const targetDateString = `${yyyy}-${mm}-${dd}`;
     
-    const startOfYesterdayISO = `${targetDateString}T00:00:00.000Z`; // Technically this acts as 00:00 in Supabase if we treat the DB as storing UTC but representing local time, wait, better yet, just use standard offsets.
-    
-    // Actually, the cleanest way to query "yesterday" given a timezone difference when the database stores timestampz:
-    // Start of yesterday (Cairo Time): YYYY-MM-DDT00:00:00+03:00
-    // End of yesterday (Cairo Time): YYYY-MM-DDT23:59:59+03:00
-    // BUT since the database stores dates in string format (YYYY-MM-DD) in violation_date, we match exactly that string!
-    
     console.log(`[Cron Debug] Fetching violations for yesterday (Cairo): ${targetDateString}`);
     
     // 3. Fetch Violations via Direct Table Query
