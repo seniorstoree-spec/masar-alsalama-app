@@ -77,8 +77,8 @@ function ArchivePage() {
   const [monthSel, setMonthSel] = useState("all");
   const [yearSel, setYearSel] = useState("all");
 
-  // Custom added month folders (September included by default)
-  const [customFolders, setCustomFolders] = useState<string[]>([`${currentYear}-09`]);
+  // Custom added month folders
+  const [customFolders, setCustomFolders] = useState<string[]>([]);
   const [newMonthSel, setNewMonthSel] = useState("9");
   const [newYearSel, setNewYearSel] = useState(String(currentYear));
   const [addFolderOpen, setAddFolderOpen] = useState(false);
@@ -133,9 +133,9 @@ function ArchivePage() {
       map[key].rows.push(v);
     });
 
-    // Always include months with rows + September (month 9) + custom user added months
+    // Always include months with rows + custom user added months
     return Object.values(map)
-      .filter((f) => f.rows.length > 0 || f.month === 9 || customFolders.includes(f.key))
+      .filter((f) => f.rows.length > 0 || customFolders.includes(f.key))
       .sort((a, b) => (a.key < b.key ? 1 : -1))
       .map((f): ArchiveFolder => {
         const emps: Record<string, number> = {};
