@@ -20,6 +20,8 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedSectionViolationsRouteImport } from './routes/_authenticated/section-violations'
 import { Route as AuthenticatedViolationTypesRouteImport } from './routes/_authenticated/violation-types'
 import { Route as AuthenticatedViolationsRouteImport } from './routes/_authenticated/violations'
+import { Route as AuthenticatedQualityFormsIndexRouteImport } from './routes/_authenticated/quality-forms/index'
+import { Route as AuthenticatedQualityFormsFormIdRouteImport } from './routes/_authenticated/quality-forms/$formId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -78,6 +80,18 @@ const AuthenticatedViolationsRoute = AuthenticatedViolationsRouteImport.update({
   path: '/violations',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedQualityFormsIndexRoute =
+  AuthenticatedQualityFormsIndexRouteImport.update({
+    id: '/quality-forms/',
+    path: '/quality-forms/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedQualityFormsFormIdRoute =
+  AuthenticatedQualityFormsFormIdRouteImport.update({
+    id: '/quality-forms/$formId',
+    path: '/quality-forms/$formId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -90,6 +104,8 @@ export interface FileRoutesByFullPath {
   '/section-violations': typeof AuthenticatedSectionViolationsRoute
   '/violation-types': typeof AuthenticatedViolationTypesRoute
   '/violations': typeof AuthenticatedViolationsRoute
+  '/quality-forms/$formId': typeof AuthenticatedQualityFormsFormIdRoute
+  '/quality-forms': typeof AuthenticatedQualityFormsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +118,8 @@ export interface FileRoutesByTo {
   '/section-violations': typeof AuthenticatedSectionViolationsRoute
   '/violation-types': typeof AuthenticatedViolationTypesRoute
   '/violations': typeof AuthenticatedViolationsRoute
+  '/quality-forms/$formId': typeof AuthenticatedQualityFormsFormIdRoute
+  '/quality-forms': typeof AuthenticatedQualityFormsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +134,8 @@ export interface FileRoutesById {
   '/_authenticated/section-violations': typeof AuthenticatedSectionViolationsRoute
   '/_authenticated/violation-types': typeof AuthenticatedViolationTypesRoute
   '/_authenticated/violations': typeof AuthenticatedViolationsRoute
+  '/_authenticated/quality-forms/$formId': typeof AuthenticatedQualityFormsFormIdRoute
+  '/_authenticated/quality-forms/': typeof AuthenticatedQualityFormsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -130,6 +150,8 @@ export interface FileRouteTypes {
     | '/section-violations'
     | '/violation-types'
     | '/violations'
+    | '/quality-forms/$formId'
+    | '/quality-forms'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -142,6 +164,8 @@ export interface FileRouteTypes {
     | '/section-violations'
     | '/violation-types'
     | '/violations'
+    | '/quality-forms/$formId'
+    | '/quality-forms'
   id:
     | '__root__'
     | '/'
@@ -155,6 +179,8 @@ export interface FileRouteTypes {
     | '/_authenticated/section-violations'
     | '/_authenticated/violation-types'
     | '/_authenticated/violations'
+    | '/_authenticated/quality-forms/$formId'
+    | '/_authenticated/quality-forms/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -242,6 +268,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedViolationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/quality-forms/$formId': {
+      id: '/_authenticated/quality-forms/$formId'
+      path: '/quality-forms/$formId'
+      fullPath: '/quality-forms/$formId'
+      preLoaderRoute: typeof AuthenticatedQualityFormsFormIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/quality-forms/': {
+      id: '/_authenticated/quality-forms/'
+      path: '/quality-forms'
+      fullPath: '/quality-forms'
+      preLoaderRoute: typeof AuthenticatedQualityFormsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -254,6 +294,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSectionViolationsRoute: typeof AuthenticatedSectionViolationsRoute
   AuthenticatedViolationTypesRoute: typeof AuthenticatedViolationTypesRoute
   AuthenticatedViolationsRoute: typeof AuthenticatedViolationsRoute
+  AuthenticatedQualityFormsFormIdRoute: typeof AuthenticatedQualityFormsFormIdRoute
+  AuthenticatedQualityFormsIndexRoute: typeof AuthenticatedQualityFormsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -265,6 +307,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSectionViolationsRoute: AuthenticatedSectionViolationsRoute,
   AuthenticatedViolationTypesRoute: AuthenticatedViolationTypesRoute,
   AuthenticatedViolationsRoute: AuthenticatedViolationsRoute,
+  AuthenticatedQualityFormsFormIdRoute: AuthenticatedQualityFormsFormIdRoute,
+  AuthenticatedQualityFormsIndexRoute: AuthenticatedQualityFormsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

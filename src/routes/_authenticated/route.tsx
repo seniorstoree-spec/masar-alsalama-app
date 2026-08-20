@@ -17,6 +17,7 @@ export const Route = createFileRoute("/_authenticated")({
 
 const allNavItems: { to: string; label: string; icon: any; roles: string[] }[] = [
   { to: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard, roles: ["developer", "user"] },
+  { to: "/quality-forms", label: "نماذج الجودة", icon: FileBarChart2, roles: ["developer", "user"] },
   { to: "/new-violation", label: "تسجيل مخالفة", icon: FilePlus2, roles: ["developer", "user"] },
   { to: "/violations", label: "المخالفات", icon: AlertTriangle, roles: ["developer", "user"] },
   { to: "/violation-types", label: "أنواع المخالفات", icon: ListChecks, roles: ["developer", "user"] },
@@ -24,7 +25,6 @@ const allNavItems: { to: string; label: string; icon: any; roles: string[] }[] =
   { to: "/employees", label: "الموظفين", icon: Users, roles: ["developer"] },
   { to: "/archive", label: "الأرشيف", icon: Archive, roles: ["developer", "user"] },
   { to: "/section-violations", label: "مخالفات العمال بالقسم", icon: FolderOpen, roles: ["developer", "user"] },
-
 ];
 
 function AuthedLayout() {

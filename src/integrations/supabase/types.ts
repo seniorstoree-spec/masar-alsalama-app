@@ -173,6 +173,62 @@ export type Database = {
           },
         ]
       }
+      quality_forms: {
+        Row: {
+          id: string
+          form_type: Database["public"]["Enums"]["quality_form_type"]
+          form_date: string
+          supervisor_name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          form_type: Database["public"]["Enums"]["quality_form_type"]
+          form_date: string
+          supervisor_name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          form_type?: Database["public"]["Enums"]["quality_form_type"]
+          form_date?: string
+          supervisor_name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      quality_form_records: {
+        Row: {
+          id: string
+          form_id: string
+          record_data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          form_id: string
+          record_data: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          form_id?: string
+          record_data?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quality_form_records_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "quality_forms"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -181,7 +237,19 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      quality_form_type:
+        | "in_process_control"
+        | "daily_quality_report"
+        | "baking_temperature"
+        | "metal_detector"
+        | "sifting"
+        | "sensory_evaluation"
+        | "non_conforming"
+        | "cleaning"
+        | "food_safety"
+        | "final_release"
+        | "weight_monitoring"
+        | "additives_weights"
     }
     CompositeTypes: {
       [_ in never]: never
